@@ -1,0 +1,300 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+  BANNED
+}
+
+enum AuthProvider {
+  TELEGRAM
+  GOOGLE
+  EMAIL
+  PASSWORD
+}
+
+enum PostVisibility {
+  PUBLIC
+  FRIENDS
+  PRIVATE
+}
+
+enum StreakStatus {
+  ACTIVE
+  BROKEN
+  RESTORED
+  FROZEN
+}
+
+enum StreakDayStatus {
+  COMPLETED
+  MISSED
+  RESTORED_FREE
+  RESTORED_PAID
+  FROZEN
+}
+
+enum RestorationMethod {
+  FREE_MANUAL
+  TELEBIRR_PAID
+}
+
+enum BreakStatus {
+  ELIGIBLE_FREE
+  ELIGIBLE_PAID
+  PENDING_VERIFICATION
+  RESTORED
+  EXPIRED
+  REJECTED
+}
+
+enum PaymentReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+enum NotificationType {
+  STREAK_REMINDER
+  STREAK_BROKEN
+  PAYMENT_APPROVED
+  PAYMENT_REJECTED
+  SYSTEM
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+}
+
+// ==========================================
+// MODELS
+// ==========================================
+
+model User {
+  id               String          @id @default(uuid())
+  role             UserRole        @default(USER)
+  status           AccountStatus   @default(ACTIVE)
+  username         String?         @unique
+  displayName      String?         @map("display_name")
+  email            String?         @unique
+  avatarUrl        String?         @map("avatar_url")
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Owned relations (Cascade delete)
+  authAccounts     AuthAccount[]
+  settings         UserSettings?
+  verses           Verse[]
+  streak           Streak?
+  streakDays       StreakDay[]
+  streakBreaks     StreakBreak[]
+  notifications    Notification[]
+  sessions         Session[]
+
+  // Financial / Audit relations (Restricted delete on user for financial records)
+  payments         StreakRestorationPayment[]
+  reviewedPayments StreakRestorationPayment[] @relation("ReviewedPayments")
+
+  @@map("users")
+}
+
+model AuthAccount {
+  id             String       @id @default(uuid())
+  userId         String       @map("user_id")
+  provider       AuthProvider
+  providerUserId String       @map("provider_user_id")
+  passwordHash   String?      @map("password_hash")
+  metadata       Json?
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@unique([userId, provider])
+  @@map("auth_accounts")
+}
+
+model UserSettings {
+  id                 String   @id @default(uuid())
+  userId             String   @unique @map("user_id")
+  timezone           String   @default("Africa/Addis_Ababa")
+  dailyReminderTime  String?  @map("daily_reminder_time")
+  reminderEnabled    Boolean  @default(true) @map("reminder_enabled")
+  preferredLanguage  String   @default("en") @map("preferred_language")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+model Verse {
+  id         String         @id @default(uuid())
+  userId     String         @map("user_id")
+  reference  String
+  text       String         @db.Text
+  reflection String?        @db.Text
+  visibility PostVisibility @default(PUBLIC)
+  postedAt   DateTime       @default(now()) @map("posted_at") @db.Timestamptz(6)
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  streakDays StreakDay[]
+
+  @@map("verses")
+}
+
+model Streak {
+  id            String       @id @default(uuid())
+  userId        String       @unique @map("user_id")
+  currentStreak Int          @default(0) @map("current_streak")
+  longestStreak Int          @default(0) @map("longest_streak")
+  status        StreakStatus @default(ACTIVE)
+  lastPostedAt  DateTime?    @map("last_posted_at") @db.Timestamptz(6)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  streakDays    StreakDay[]
+  streakBreaks  StreakBreak[]
+
+  @@map("streaks")
+}
+
+model StreakDay {
+  id        String          @id @default(uuid())
+  streakId  String          @map("streak_id")
+  userId    String          @map("user_id")
+  verseId   String?         @map("verse_id")
+  localDate DateTime        @map("local_date") @db.Date
+  status    StreakDayStatus @default(COMPLETED)
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  streak    Streak          @relation(fields: [streakId], references: [id], onDelete: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verse     Verse?          @relation(fields: [verseId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, localDate])
+  @@map("streak_days")
+}
+
+model StreakBreak {
+  id                     String             @id @default(uuid())
+  streakId               String             @map("streak_id")
+  userId                 String             @map("user_id")
+  missedDate             DateTime           @map("missed_date") @db.Date
+  streakCountBeforeBreak Int                @map("streak_count_before_break")
+  status                 BreakStatus        @default(ELIGIBLE_FREE)
+  freeWindowExpiresAt    DateTime           @map("free_window_expires_at") @db.Timestamptz(6)
+  paidWindowExpiresAt    DateTime?          @map("paid_window_expires_at") @db.Timestamptz(6)
+  restoredAt             DateTime?          @map("restored_at") @db.Timestamptz(6)
+  restorationMethod      RestorationMethod? @map("restoration_method")
+  createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  streak                 Streak             @relation(fields: [streakId], references: [id], onDelete: Cascade)
+  user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments               StreakRestorationPayment[]
+
+  @@unique([userId, missedDate])
+
+  // PARTIAL UNIQUE CONSTRAINT (to be added via raw SQL migration):
+  // Enforces at most one OPEN break per user:
+  // CREATE UNIQUE INDEX idx_streak_breaks_one_open_per_user ON streak_breaks (user_id) 
+  //   WHERE status IN ('ELIGIBLE_FREE', 'ELIGIBLE_PAID', 'PENDING_VERIFICATION');
+
+  @@map("streak_breaks")
+}
+
+model StreakRestorationPayment {
+  id                   String              @id @default(uuid())
+  breakId              String              @map("break_id")
+  userId               String              @map("user_id")
+  amount               Decimal             @db.Decimal(10, 2)
+  currency             String              @default("ETB")
+  transactionReference String              @unique @map("transaction_reference")
+  payerPhone           String?             @map("payer_phone")
+  screenshotUrl        String?             @map("screenshot_url")
+  reviewStatus         PaymentReviewStatus @default(PENDING) @map("review_status")
+  adminNotes           String?             @map("admin_notes")
+  reviewedByAdminId    String?             @map("reviewed_by_admin_id")
+  reviewedAt           DateTime?           @map("reviewed_at") @db.Timestamptz(6)
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Financial integrity: Restrict deletion of parent break and user
+  break                StreakBreak         @relation(fields: [breakId], references: [id], onDelete: Restrict)
+  user                 User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  reviewer             User?               @relation("ReviewedPayments", fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+
+  // NOTE: transactionReference is marked @unique here. Case-insensitive uniqueness
+  // will be enforced via a functional index in a follow-up raw-SQL migration:
+  // CREATE UNIQUE INDEX idx_payments_tx_ref_ci ON streak_restoration_payments (LOWER(transaction_reference));
+  //
+  // PARTIAL UNIQUE CONSTRAINTS (to be added via raw SQL migration):
+  // 1. At most one PENDING payment per break:
+  // CREATE UNIQUE INDEX idx_payments_one_pending_per_break ON streak_restoration_payments (break_id) 
+  //   WHERE review_status = 'PENDING';
+  // 2. At most one APPROVED payment per break:
+  // CREATE UNIQUE INDEX idx_payments_one_approved_per_break ON streak_restoration_payments (break_id) 
+  //   WHERE review_status = 'APPROVED';
+
+  @@map("streak_restoration_payments")
+}
+
+model Notification {
+  id        String             @id @default(uuid())
+  userId    String             @map("user_id")
+  type      NotificationType
+  status    NotificationStatus @default(PENDING)
+  title     String
+  body      String             @db.Text
+  data      Json?
+  readAt    DateTime?          @map("read_at") @db.Timestamptz(6)
+  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}

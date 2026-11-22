@@ -1,0 +1,29 @@
+{
+  "name": "versesnap-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "VerseSnap Web App - React 18 + Vite 5 + ES Modules",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint src/",
+    "format": "prettier --write \"src/**/*.{js,jsx,css}\"",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.2"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.2.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.21.0",
+    "jsdom": "^26.0.0",
+    "prettier": "^3.5.2",
+    "vite": "^5.4.14",
+    "vitest": "^2.1.8"
+  }
+}
